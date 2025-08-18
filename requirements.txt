@@ -1,0 +1,9 @@
+requests
+pytest
+requests-mock
+flake8
+pytest-cov
+setuptools
+wheel
+black
+mypy

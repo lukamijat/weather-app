@@ -1,23 +1,31 @@
-# Byte-compiled / caches
-__pycache__/
-*.py[cod]
-*.egg-info/
-
-# Virtual env
+# Virtual envs
+.env/
+env/
+.venv/
 venv/
-.env
-.env.* 
+ENV/
+env.bak/
 
-# Packaging/build
-dist/
+# Python build / packaging
+*.pyc
+__pycache__/
+*.egg-info/
 build/
-*.egg
-*.whl
+dist/
 
-# Pytest
+# Test / coverage / pytest
 .pytest_cache/
+coverage.xml
+pytest.xml
 
-# Editor / OS
+# Editor 
 .vscode/
 .idea/
+*.swp
 .DS_Store
+
+# Logs
+*.log
+
+# OS
+Thumbs.db

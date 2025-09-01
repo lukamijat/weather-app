@@ -1,5 +1,6 @@
 name: CI
 
+# Give the workflow permission to write packages so the GITHUB_TOKEN can push images
 permissions:
   contents: read
   packages: write
@@ -24,28 +25,41 @@ jobs:
       - name: Run tests inside Docker
         run: docker run --rm weather-cli-dev
 
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-results
+          path: pytest.xml
+          if-no-files-found: ignore
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+          if-no-files-found: ignore
+
   build-prod-image:
     runs-on: ubuntu-latest
-    needs: lint-and-test  # only build if tests pass
+    needs: lint-and-test
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Build Production Docker image
-        run: docker build -f docker/Dockerfile.prod -t weather-cli .
+      - name: Set up QEMU (for multi-platform, optional)
+        uses: docker/setup-qemu-action@v2
 
-      # Optional: push to Docker Hub or GHCR
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build and push production image to GHCR
+        uses: docker/build-push-action@v4
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          context: .
+          file: docker/Dockerfile.prod
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/weather-cli:latest
 
-      - name: Push Production Image
-        run: |
-          IMAGE_ID=ghcr.io/${{ github.repository }}/weather-cli
-          IMAGE_ID=$(echo $IMAGE_ID | tr '[:upper:]' '[:lower:]')
-          docker tag weather-cli $IMAGE_ID:latest
-          docker push $IMAGE_ID:latest
+      - name: Confirm image pushed
+        run: echo "Pushed image to ghcr.io/${{ github.repository_owner }}/weather-cli:latest"

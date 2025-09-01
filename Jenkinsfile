@@ -1,98 +1,69 @@
 pipeline {
-  agent {
-    docker {
-      image 'python:3.11-slim'
-      // adjust or remove this mount if the path doesn't exist on your Jenkins host
-      args '-v /var/jenkins_home/.cache/pip:/root/.cache/pip'
+    agent any
+
+    enviroment {
+        IMAGE_DEV = "weather-cli-dev"
+        IMAGE_PROD = "weather-cli"
+        REGISTRY = "ghcr.io/${env.GITHUB_REPOSITORY}"  // or docker hub
     }
-  }
 
-  environment {
-    VENV = "${WORKSPACE}/.venv"
-    PATH = "${env.VENV}/bin:${env.PATH}"
-    PIP_CACHE_DIR = "/root/.cache/pip"
-  }
 
-  options {
+options {
     timestamps()
-    timeout(time: 45, unit: 'MINUTES')
-  }
+}
 
-  stages {
-    stage('Install') {
-      steps {
-        sh '''
-          set -euo pipefail
-          python -m venv "$VENV"
-          python -m pip install --upgrade pip setuptools wheel
-          # Prefer installing dev extras for test/lint: either use requirements-dev.txt or pyproject extras
-          if [ -f requirements-dev.txt ]; then
-            python -m pip install -r requirements-dev.txt
-          elif [ -f requirements.txt ]; then
-            python -m pip install -r requirements.txt
-          else
-            python -m pip install -e ".[dev]" || true
-          fi
-        '''
-      }
-    }
-
-    stage('Lint') {
-      steps {
-        sh '''
-          set -euo pipefail
-          # fail if linters error
-          python -m flake8 weather
-        '''
-      }
-    }
-
-    stage('Test') {
-      steps {
-        sh '''
-          set -euo pipefail
-          # produce junit xml and coverage xml for Jenkins / Codecov
-          pytest --maxfail=1 --disable-warnings -q --junitxml=pytest.xml --cov=weather --cov-report=xml
-        '''
-      }
-    }
-
-    stage('Package') {
-      when { branch 'main' } // build artifacts on main (but do NOT publish here)
-      steps {
-        sh '''
-          set -euo pipefail
-          python -m pip install --upgrade build
-          python -m build
-        '''
-      }
-    }
-
-    stage('Publish (tags only)') {
-      // only run publish when Jenkins is building a Git tag (safe release)
-      when { buildingTag() }
-      steps {
-        withCredentials([string(credentialsId: 'PYPI_TOKEN', variable: 'PYPI_TOKEN')]) {
-          sh '''
-            set -euo pipefail
-            python -m pip install --upgrade twine
-            # follow twine guidance for API tokens: username __token__
-            python -m twine upload dist/* -u __token__ -p "$PYPI_TOKEN"
-          '''
+stages {
+    stage('Checkout') {
+        steps {
+            checkout scm
         }
+    }
+
+    stage('Build Dev Image') {
+        steps {
+            sh '''
+              docker build -f docker/Dockerfile.dev -t $IMAGE_DEV .
+            '''  
+        }
+    }
+
+    stage('Lint & Test') {
+      steps {  
+        sh ''' 
+          docker run --rm $IMAGE_DEV
+        '''
       }
     }
-  }
 
-  post {
-    always {
-      junit allowEmptyResults: true, testResults: 'pytest.xml'
-      archiveArtifacts artifacts: 'dist/**, build/**, *.whl, *.tar.gz', allowEmptyArchive: true
-      archiveArtifacts artifacts: 'pytest.xml, coverage.xml', allowEmptyArchive: true
-      cleanWs()
+    stage('Build Prod Image') {
+        when { branch 'main' }
+        steps {
+            sh ''' 
+              docker build -f docker/Dockerfile.prod -t $IMAGE_PROD .
+            '''
+        }
     }
-    failure {
-      // optionally add notifications here
+
+    stage('Push prod image') {
+        when { branch 'main' }
+        steps {
+            withCredentials([usernamePassword(credentialsId: 'ghcr-creds', usernameVariable: 'REG_USER', passwordVariable: 'REG_PASS')]) {
+                sh ''' 
+                  echo "$REG_PASS" | docker login ghcr.io -u "$REG_USER" --password-stdin
+                  IMAGE_ID=$REGISTRY/weather-cli
+                  IMAGE_ID=$(echo $IMAGE_ID | tr '[:upper:]' '[:lower:]')
+                  docker tag $IMAGE_PROD $IMAGE_ID:latest
+                  docker push $IMAGE_ID:latest
+                '''
+            }
+        }
     }
-  }
+}
+
+    post {
+        always {
+            junit allowEmptyResults: true, testResults: 'pytest.xml'
+            cleanWs()
+        }
+    }
 }

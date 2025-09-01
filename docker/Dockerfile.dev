@@ -8,4 +8,6 @@ RUN pip install --no-cache-dir -r requirements.txt -r requirements-dev.txt
 
 COPY . .
 
-CMD ["pytest", "--maxfail=1", "--disable-warnings", "-q"]
+RUN pip install -e .
+
+CMD ["pytest", "--maxfail=1", "--disable-warnings", "-q", "--junitxml=pytest.xml"]

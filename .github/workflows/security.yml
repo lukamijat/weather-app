@@ -16,4 +16,4 @@ jobs:
           python-version: "3.11"
       - run: |
           pip install --upgrade pip safety
-          safety checl --full-report
+          safety check --full-report
